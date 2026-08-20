@@ -1,91 +1,112 @@
-# dsh-asset-pipeline
+# dsh-imagedit
 
-**游戏素材后处理管线** — A DeepSeek Harness (DSH) skill plugin that turns
-AI-generated images into engine-ready game assets: background removal
-(rembg AI or instant flood-fill), alpha trim, padding, canvas normalization,
-sprite-sheet composition with JSON metadata, and PNG/WebP export.
+**本地图像编辑工具箱** — A DeepSeek Harness (DSH) plugin **and** skill for
+deterministic local image editing: background cutout (rembg AI or instant
+flood-fill), trim, flip, rotate, brightness/contrast/saturation, blur,
+sharpen, rounded corners, border, canvas normalization, sprite sheets, and
+PNG/JPEG/WebP export.
 
-Originally adapted from a Codex skill, upgraded for DSH with a dependency-free
-quick cutout and sprite-sheet support.
+Dual form: a **cordis plugin** that registers an `image_edit` agent tool
+(agent calls it directly with structured parameters), and a **skill** with the
+same functionality via a Python CLI. Originally adapted from a Codex skill and
+upgraded for DSH (dependency-free quick cutout, sprite sheets, JPEG export,
+batch-directory processing).
 
 ## Features
 
-| Step | Tool | Notes |
-|---|---|---|
-| 抠图 | `--remove-bg` | rembg AI cutout (`isnet-general-use`) — complex backgrounds, shadows, hair |
-| 抠图 | `--remove-bg-quick` | flood-fill cutout, **no rembg / no model download** — flat solid backdrops (generated art) |
-| 裁剪 | `--trim` | remove transparent margins (alpha threshold) |
-| 留白 | `--padding` | even padding around the sprite |
-| 画布 | `--canvas` | scale + center onto a fixed canvas (e.g. `256x256` inventory icons) |
-| 图集 | `sheet` (batch) | compose a sprite sheet + `sprites.json` (name/x/y/w/h per frame) |
-| 导出 | `--exports` | `png` (optimized, oxipng/pngquant when available) and/or `webp` |
+| Area | Operations |
+|---|---|
+| 抠图 | `remove_bg: quick` (flood-fill, no model) · `remove_bg: rembg` (AI) |
+| 基础 | `trim` · `flip h/v` · `rotate` · `padding` · `canvas WxH` (scale+center) |
+| 调色 | `brightness` · `contrast` · `saturation` |
+| 滤镜 | `blur` · `sharpen` |
+| 修饰 | `rounded` (corners) · `border W[,HEX]` · `auto-orient` (EXIF) |
+| 批量 | JSON manifest · `--dir` recursive folder · sprite sheet + `sprites.json` |
+| 导出 | PNG (oxipng/pngquant auto) · JPEG · WebP (`quality`) |
 
 ## Install
 
-```powershell
-# Option A — clone into your DSH user skills (all workspaces):
-git clone https://github.com/bbbz123/dsh-asset-pipeline "$HOME\.dsh\skills\asset-pipeline"
+### As a plugin (agent tool `image_edit`) — recommended
 
-# Option B — via dsh-market (search "asset-pipeline")
-# Option C — copy the folder into <project>\.dsh\skills\asset-pipeline for one project
+```powershell
+# local link install
+dsh plugin --profile web add link:D:\path\to\dsh-imagedit
+
+# once published on npm / GitHub
+dsh plugin --profile web add dsh-imagedit
+# or
+dsh plugin --profile web add github:bbbz123/dsh-imagedit
 ```
 
-DSH discovers it automatically (no restart needed for the catalog; a restart
-reloads skill content in running sessions).
+Restart `dsh web`; the `image_edit` tool then appears in the tool catalog and
+the agent can call it directly. Override the Python interpreter with the
+`DSH_IMAGEDIT_PYTHON` environment variable if needed.
+
+### As a skill (CLI)
+
+```powershell
+git clone https://github.com/bbbz123/dsh-imagedit "$HOME\.dsh\skills\dsh-imagedit"
+# or copy the folder into <project>\.dsh\skills\dsh-imagedit for one project
+```
+
+DSH discovers it automatically. The skill instructs the agent to prefer the
+`image_edit` tool when available and fall back to the CLI.
 
 ## Usage
 
-```powershell
-# Single image — quick flood-fill cutout (flat white background art)
-python scripts/asset_pipeline.py run `
-  --input item.png `
-  --remove-bg-quick auto `
-  --canvas 256x256 --padding 16 `
-  --out-dir output/assets/exported
+### Agent tool
 
-# Single image — rembg AI cutout (complex background)
-python scripts/asset_pipeline.py run --input item.png --remove-bg --canvas 256x256
-
-# Batch + sprite sheet
-python scripts/asset_pipeline.py batch --manifest manifest.json
-```
-
-`manifest.json` example:
+Call `image_edit` with structured params, e.g.:
 
 ```json
 {
-  "out_dir": "output/assets/exported",
-  "remove_bg_quick": "auto",
-  "trim": true,
-  "padding": 16,
+  "input": "gen/sword.png",
+  "remove_bg": "quick",
+  "bg_color": "auto",
   "canvas": "256x256",
-  "exports": ["png", "webp"],
-  "sheet": "sprites.png",
-  "items": [
-    { "name": "potion_red", "input": "gen/potion-red.png" },
-    { "name": "sword",      "input": "gen/sword.png" }
-  ]
+  "padding": 16,
+  "formats": ["png", "webp"]
 }
 ```
 
-See [references/cli.md](references/cli.md) for the full CLI reference, and
-`SKILL.md` for the agent-facing instructions.
+### CLI
+
+```powershell
+# quick flood-fill cutout + canvas
+python scripts/asset_pipeline.py run --input item.png `
+  --remove-bg-quick auto --canvas 256x256 --padding 16 --out-dir output/images/edited
+
+# combined edits
+python scripts/asset_pipeline.py run --input item.png `
+  --remove-bg-quick #FFFFFF --rotate 90 --flip h `
+  --brightness 1.1 --saturation 1.2 --rounded 30 --border "4,#FF0000" `
+  --exports png jpg --out-dir output/images/edited
+
+# batch a whole folder (recursive)
+python scripts/asset_pipeline.py batch --dir ./photos --rotate 90 --exports jpg
+
+# batch manifest + sprite sheet
+python scripts/asset_pipeline.py batch --manifest manifest.json
+```
+
+See [references/cli.md](references/cli.md) for the full CLI reference and
+manifest schema, and `SKILL.md` for the agent-facing instructions.
 
 ## Recommended pipeline (with dsh-draw + vision-router)
 
 ```
 dsh-draw / image_generate  (prompt: "flat solid white background, no shadows")
-  → asset_pipeline.py run --remove-bg-quick auto --canvas 256x256 --padding 16
-  → engine-ready transparent PNG (+ sprite sheet via batch)
+  → image_edit (remove_bg: quick, canvas, padding)  →  engine-ready PNG
+  → batch manifest with "sheet" for a sprite atlas
 ```
 
-For complex assets prefer `--remove-bg` (rembg); for a one-off visual check of
+For complex assets prefer `remove_bg: "rembg"`; for one-off visual checks of
 the cutout use `vision_extract_foreground`.
 
 ## Requirements
 
 - Python 3.10+ and [Pillow](https://pypi.org/project/pillow/) (required)
-- `rembg` (optional, only for `--remove-bg`)
+- `rembg` (optional, only for the `rembg` cutout mode)
 - `oxipng` / `pngquant` (optional, auto-used when on PATH)
 
 ## License

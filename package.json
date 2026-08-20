@@ -1,0 +1,55 @@
+{
+  "name": "dsh-imagedit",
+  "version": "0.1.0",
+  "description": "Local image editing toolkit for DeepSeek Harness: one image_edit tool for deterministic edits — cutout (quick flood-fill or rembg AI), trim, flip, rotate, brightness/contrast/saturation, blur, sharpen, rounded corners, border, canvas resize+center, sprite sheets, and PNG/JPEG/WebP export. Also ships as a skill (SKILL.md + CLI scripts).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbbz123/dsh-imagedit.git"
+  },
+  "homepage": "https://github.com/bbbz123/dsh-imagedit#readme",
+  "bugs": {
+    "url": "https://github.com/bbbz123/dsh-imagedit/issues"
+  },
+  "author": {
+    "name": "bbbz123"
+  },
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./lib/index.js",
+  "files": [
+    "lib",
+    "scripts",
+    "references",
+    "SKILL.md",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.8"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "cordis",
+    "image-editing",
+    "image-processing",
+    "background-removal",
+    "sprite-sheet"
+  ],
+  "license": "MIT"
+}

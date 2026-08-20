@@ -1,37 +1,29 @@
 ---
-name: asset-pipeline
-description: Process generated game assets and sprites by removing backgrounds (AI rembg or quick flood-fill for flat solid backdrops), trimming transparent edges, adding padding, centering on fixed canvases, optionally composing sprite sheets, and exporting PNG/WebP outputs. Use when the agent needs to turn AI-generated images into engine-ready icons, item sprites, portraits, or other game assets, especially when the user mentions cutout, transparency, trim, padding, canvas sizing, sprite sheet, or batch export.
+name: dsh-imagedit
+description: Local image editing toolkit — cutout (quick flood-fill for flat solid backgrounds, or rembg AI), trim, flip, rotate, brightness/contrast/saturation, blur, sharpen, rounded corners, border, padding, canvas resize+center, sprite sheets, and PNG/JPEG/WebP export. Use when the user asks to edit, clean up, cut out, resize, rotate, flip, enhance, or convert local images into engine-ready icons, sprites, portraits, photos, or other image assets.
 ---
 
-# Asset Pipeline
+# dsh-imagedit
 
-Use the bundled CLI for deterministic asset cleanup. Default to this skill when the work is image postprocessing rather than image generation.
+Deterministic local image editing (no AI, no network). **If the `image_edit`
+tool is available in this session, call it with structured parameters instead
+of building shell commands.** Otherwise use the bundled CLI below.
 
-## Workflow
+## Agent workflow
 
-1. Decide whether the task is a single image or a batch manifest.
-2. Use `scripts/asset_pipeline.py`.
-3. Pick the background removal mode:
-   - `--remove-bg-quick` — **flood-fill cutout, no rembg, no model download.** Best for images generated with a flat solid background (e.g. dsh-draw output prompted with "flat solid white background, no shadows"). Pass `auto` to sample the corner color, or a hex like `#FFFFFF`.
-   - `--remove-bg` — **rembg AI cutout** (downloads the `isnet-general-use` model on first run). Use for complex backgrounds, shadows, hair/fur, or when flood-fill fails.
-4. Keep `--trim` enabled unless the user explicitly wants original framing preserved.
-5. Add `--padding` and `--canvas` to make icons consistent in-engine.
-6. In batch mode, set `"sheet": "sprites.png"` to also compose a sprite sheet with a `sprites.json` sidecar (name/x/y/w/h per frame).
-7. Export `png` for engine imports; add `webp` only when previews or web surfaces are useful.
+1. Get the source image path (`vision_materialize` first if you only have an attachment id).
+2. Call `image_edit` with the desired operations (cutout / trim / flip / rotate /
+   enhance / blur / sharpen / rounded / border / canvas / formats).
+3. Show the result to the user with `vision_present`.
 
-## End-to-end game asset loop (with dsh-draw + vision-router)
+Recommended game-asset loop: generate with a flat solid background
+("flat solid white background, no shadows"), then `image_edit` with
+`remove_bg: "quick"`, `canvas: "256x256"`, `padding: 16` → engine-ready PNG.
+For complex backgrounds (shadows, hair, transparency) use `remove_bg: "rembg"`.
 
-```
-dsh-draw / image_generate (prompt: "flat solid white background, no shadows")
-  → asset_pipeline.py run --remove-bg-quick auto --canvas 256x256 --padding 16
-  → engine-ready transparent PNG (+ optional sprite sheet via batch manifest)
-```
+## CLI (fallback)
 
-For complex assets (shadows, transparency, busy backgrounds) prefer `--remove-bg` (rembg); use `vision_extract_foreground` for one-off visual checks of the cutout.
-
-## Commands
-
-Single image:
+Single image — quick flood-fill cutout (no rembg):
 
 ```powershell
 python scripts/asset_pipeline.py run `
@@ -39,18 +31,7 @@ python scripts/asset_pipeline.py run `
   --remove-bg-quick auto `
   --canvas 256x256 `
   --padding 16 `
-  --out-dir output/assets/exported
-```
-
-Explicit background color:
-
-```powershell
-python scripts/asset_pipeline.py run `
-  --input <image-path> `
-  --remove-bg-quick #FFFFFF `
-  --bg-tolerance 40 `
-  --canvas 256x256 `
-  --out-dir output/assets/exported
+  --out-dir output/images/edited
 ```
 
 AI cutout (rembg) for complex backgrounds:
@@ -60,29 +41,66 @@ python scripts/asset_pipeline.py run `
   --input <image-path> `
   --remove-bg `
   --canvas 256x256 `
-  --padding 16 `
-  --out-dir output/assets/exported
+  --out-dir output/images/edited
 ```
 
-Batch manifest:
+Combined edits:
 
 ```powershell
-python scripts/asset_pipeline.py batch --manifest <manifest-json>
+python scripts/asset_pipeline.py run `
+  --input <image-path> `
+  --remove-bg-quick #FFFFFF `
+  --rotate 90 --flip h `
+  --brightness 1.1 --contrast 1.05 --saturation 1.2 `
+  --blur 0 --sharpen 0.5 `
+  --rounded 30 --border "4,#FF0000" `
+  --canvas 256x256 --padding 8 `
+  --exports png jpg --quality 90 `
+  --out-dir output/images/edited
 ```
 
-Read [references/cli.md](references/cli.md) for concrete examples and manifest structure.
+Batch: JSON manifest (per-item overrides + optional sprite sheet) or a directory:
+
+```powershell
+python scripts/asset_pipeline.py batch --manifest manifest.json
+python scripts/asset_pipeline.py batch --dir ./photos --rotate 90 --exports jpg
+```
+
+Read [references/cli.md](references/cli.md) for the full reference (all options,
+manifest schema, sprite sheet).
+
+## Options
+
+| Option | Meaning |
+|---|---|
+| `--remove-bg-quick [HEX\|auto]` | flood-fill cutout, no rembg — flat solid backdrops |
+| `--remove-bg` | rembg AI cutout (downloads `isnet-general-use` on first run) |
+| `--trim` / `--no-trim` | trim transparent margins (default on) |
+| `--flip h\|v` | horizontal / vertical flip |
+| `--rotate DEG` | rotate (90/180/270 lossless) |
+| `--rotate-bg HEX` | fill color for arbitrary angles |
+| `--brightness/--contrast/--saturation F` | color enhancements (default 1.0) |
+| `--blur R` | gaussian blur radius |
+| `--sharpen F` | sharpening amount |
+| `--rounded R` | rounded-corner radius |
+| `--border W[,HEX]` | border width + optional color |
+| `--padding N` | even padding |
+| `--canvas WxH` | scale + center onto a fixed canvas |
+| `--exports png\|jpg\|webp [...]` | output formats |
+| `--quality N` | JPEG/WebP quality (default 92) |
+| `--auto-orient` | apply EXIF orientation |
+| `sheet` (batch manifest) | compose sprite sheet + `sprites.json` |
 
 ## Rules
 
 - Keep a PNG master export whenever the image may be imported into a game engine.
-- Treat the first `rembg` run as slow because it may download the segmentation model; prefer `--remove-bg-quick` for flat-color generated art.
-- Avoid background removal on images that already have clean alpha.
-- Use square canvases for inventory icons unless the user specifies another aspect ratio.
-- If external PNG optimizers such as `oxipng` or `pngquant` are installed, the script will use them automatically.
-- `--remove-bg-quick` and `--remove-bg` are mutually exclusive; quick wins if both are present.
+- `--remove-bg-quick` and `--remove-bg` are mutually exclusive; quick wins.
+- Treat the first `rembg` run as slow (model download); prefer `--remove-bg-quick`
+  for flat-color generated art.
+- External PNG optimizers (`oxipng`, `pngquant`) are used automatically when on PATH.
 
 ## Resources
 
-- `scripts/asset_pipeline.py` - main deterministic CLI
-- `scripts/asset_pipeline.ps1` - Windows wrapper for direct invocation
-- `references/cli.md` - usage patterns and batch manifest example
+- `scripts/asset_pipeline.py` - main deterministic CLI (also wrapped by the `image_edit` tool)
+- `scripts/asset_pipeline.ps1` - Windows wrapper
+- `references/cli.md` - full CLI reference and manifest schema

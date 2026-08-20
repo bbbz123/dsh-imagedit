@@ -1,0 +1,4 @@
+# dsh-imagedit bundle patch: mount the local image editing tool.
+- insert:
+    - id: dsh-imagedit
+      name: dsh-imagedit
