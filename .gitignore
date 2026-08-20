@@ -3,3 +3,7 @@ __pycache__/
 output/
 tmp/
 .venv/
+
+node_modules/
+pnpm-lock.yaml
+pnpm-workspace.yaml
